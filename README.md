@@ -96,7 +96,7 @@ A type class for container types. If implemented for the given container type it
       def map[A, B](m: F[A], f: A => B): F[B]
     }
 
-This means that for every type `T[A]` that has a function with a signature `(A => B):T[B]` it's easy to define a `Functor`.
+This means that for every type `T[A]` that has a function `f` with a signature `f(A => B):T[B]` it's easy to define a `Functor`.
 
 *Functor* seems to be the name for any context of which the context can be transformed.
 
@@ -144,7 +144,7 @@ This is not applicable because I am working with Scala.
 In the world that I'm used to we work with interfaces (or traits) to specify contracts. I could create an interface to tell that I only care about the `A => B` conversion
 
     trait Functor[A] {
-      def map(f: A => B):Functor[B]
+      def map[B](f: A => B):Functor[B]
     }
 
 And then in the function
@@ -178,7 +178,7 @@ A type class for container types. If implemented for the given container type it
       def apply[A, B](a: Z[A], f: Z[A => B]): Z[B]
     }
 
-This means that for every type `T[A]` that has a function with a signature `(T[A => B]):T[B]` it's easy to define an `Apply`.
+This means that for every type `T[A]` that has a function `f` with a signature `f(T[A => B]):T[B]` it's easy to define an `Apply`.
 
 *Apply* seems to be the name for any context that can apply a transformation that resides in the same type of context.
 
@@ -211,14 +211,14 @@ A type class for any type. If implemented for the given type it allows you to ap
       def append(a: T, b: T): T
     }
 
-This means that for every type `T` that has a function with a signature `(T):T` it's easy to define an `Semigroup`. Note that in this particular case the laws of semigroup dictate which methods could be used.
+This means that for every type `T` that has a function with a signature `(T):T` it's easy to define a `Semigroup`. Note that in this particular case the laws of semigroup dictate which methods could be used.
 
 *Semigroup* seems to be the name for any type that can be appended.
 
 If we define it for `String` it would look like this
 
     object StringSemigroup extends Semigroup[String] {
-      def append(a: T, b: T): T = a + b
+      def append(a: String, b: String): String = a + b
     }
 
 Category
@@ -231,7 +231,7 @@ A type class for container types that have two type parameters. If implemented f
       def compose[A, B, C](f: B ~> C, g: A ~> B): A ~> C
     }
 
-This means that for every type `T[A, B]` that has a function with the signature `(T[B, C]):T[A, C]` it's easy to define an `Category`. Note that it should be possible to create an instance of `T[A, A]` as well.
+This means that for every type `T[A, B]` that has a function `f` with the signature `f(T[B, C]):T[A, C]` it's easy to define a `Category`. Note that categories also require another function that allows you to create an instance of `T[A, A]`.
 
 *Category* seems to be the name for any context of related types that can be chained. Just like functions: if you have `A => B` and `B => C` you could create a function `A => C`.
 
@@ -252,3 +252,39 @@ If we define it for `Function1` it would look like this
           def apply(a: A) = f(g(a))
       }
     }
+
+Comonad
+-------
+
+A type class for container types. If implemented for the given container type it allows you to extract the value from the container. It also allows you to nest it deeper: `T[A]` would then become `T[T[A]]`. This combination allows you to convert the container and it contents with a method that only returns the new contents.
+
+Note that it extends `Functor`
+
+    trait Comonad[W[_]] extends Functor[W] {
+      def extract[A](f: W[A]): A
+      def duplicate[A](a: W[A]): W[W[A]]
+      def extend[A, B](a: W[A])(f: W[A] ⇒ B): W[B] = map(duplicate(a), f)
+    }
+
+This means that for every type `T[A]` that has a function `f` with signature `f():A`, a function `g` with signature `g():T[T[a]]` and a function `h` with signature `h(A => B):T[B]` it's easy to define a `Comonad`.
+
+Note that `extend` is defined using the other methods.
+
+*Comonad* seems to be the name for any context for which the value can be extracted. It also allows you to perform transformations with functions that accept a value within a context and return a value without a context.
+
+If we define it for `Some` it would look like this
+
+    object SomeComonad extends Comonad[Some] {
+      def extract[A](f: Some[A]):A = {
+        val Some(value) = f
+        value
+      }
+      def duplicate[A](a: Some[A]):Some[Some[A]] = 
+        Some(a)
+      def extend[A, B](a: Some[A], f: Some[A] => B):Some[B] =
+        map(duplicate(a), f)
+      def map[A, B](a: Some[A], f: A => B): Some[B] =
+        Some(f(extract(a)))
+    }
+
+
