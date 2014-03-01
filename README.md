@@ -169,57 +169,89 @@ From wikipedia:
 It's quite interesting that a principle from Object-Oriented Design can be solved using a concept that emerges from the functional world.
 
 
-Apply
------
+Signatures
+----------
 
-A type class for container types. If implemented for the given container type it allows you to apply the function in the given container to the value in the container.
+It seems that the signatures of the functions in the different type classes in combination with their laws and names give them their meaning. 
 
-    trait Apply[Z[_]] {
-      def apply[A, B](a: Z[A], f: Z[A => B]): Z[B]
-    }
+When I read about things like *Functors* people seem to use *X is a Functor* and *X has a Functor type class* interchangebly. A friend pointed out that that reminded him of the *Liskov substitution principle* which states (from wikipedia)
 
-This means that for every type `T[A]` that has a function `f` with a signature `f(T[A => B]):T[B]` it's easy to define an `Apply`.
+> If `S` is a subtype of `T`, then objects of type `T` may be replaced with objects of type `S` without altering any of the desirable properties of that program (correctness, task performed, etc.)
 
-*Apply* seems to be the name for any context that can apply a transformation that resides in the same type of context.
+So in this part I will try to explore these signatures in a simplified form where I use function(s) of a class to recognise the type classes as concepts.
 
-If we define it for `Option` it would look like this
-
-    object OptionApply extends Apply[Option] {
-      def apply[A, B](a: Option[A], f: Option[A => B]): Option[B] =
-        f.flatMap(a map _)
-      //or
-      def apply[A, B](a: Option[A], f: Option[A => B]): Option[B] =
-        (f, a) match {
-          case (Some(function), Some(value)) => Some(function(value))
-          case _ => None
-        }
-    }
-
-If we define it for our generic (and weird) `Container` type it would be this
-
-    object ContainerApply extends Apply[Container] {
-      def apply[A, B](f: Container[A => B], a: Continer[A]): Container[B] = f(a)
-    }
-
-
-Semigroup
----------
-
-A type class for any type. If implemented for the given type it allows you to append two instances of that type.
-
-    trait Semigroup[T] {
+    // Semigroup
+    trait Appendable[T] {
       def append(a: T, b: T): T
     }
 
-This means that for every type `T` that has a function with a signature `(T):T` it's easy to define a `Semigroup`. Note that in this particular case the laws of semigroup dictate which methods could be used.
-
-*Semigroup* seems to be the name for any type that can be appended.
-
-If we define it for `String` it would look like this
-
-    object StringSemigroup extends Semigroup[String] {
-      def append(a: String, b: String): String = a + b
+    // Monoid
+    trait First[T] extends Appendable[T] {
+      def value: T
     }
+
+    trait Empty[T] {
+      def value: T
+    }
+
+    object Container {
+      // Applicative in combination with Apply
+      def apply[A](content: A): Container[A] =
+        new Container(content)
+
+      // Monoid in combination with Semigroup
+      def first[A](implicit first: First[A]): Container[A] =
+        new Container(first.value)
+
+      // Alternative in combination with Applicative
+      // PlusEmpty in combination with Plus
+      def empty[A](implicit empty: Empty[A]): Container[A] =
+        new Container(empty.value)
+    }
+
+    // ApplicativePlus = Applicative with PlusEmpty
+    // Monad = Applicative with Bind
+    
+    class Container[A](
+      // Copointed
+      // Comonad in combination with Cobind
+      val content: A) {
+
+      // Semigroup
+      // Plus
+      def append(other: Container[A])(
+        implicit appender: Appendable[A]): Container[A] =
+        Container(appender.append(content, other.content))
+
+      // Functor
+      def transformContent[B](f: A => B): Container[B] =
+        Container(f(content))
+
+      // Cobind in combination with Functor
+      def transform[B](f: Container[A] => B): Container[B] =
+        nested.transformContent(f)
+
+      // Apply in combination with Functor
+      def transformWith[B](other: Container[A => B]): Container[B] =
+        transformContent(other.content)
+
+      // Bind in combination with Apply
+      // Monad in combination with Applicative
+      def transformTo[B](f: A => Container[B]): Container[B] =
+        f(content)
+
+      // Comonad in combination with Copointed
+      def nested: Container[Container[A]] =
+        Container(this)
+
+      // Alternative in combination with Applicative
+      def orElse(other: Container[A])(implicit empty: Empty[A]): Container[A] =
+        if (content == empty.value) other
+        else this
+
+
+    }
+
 
 Category
 --------
@@ -253,38 +285,5 @@ If we define it for `Function1` it would look like this
       }
     }
 
-Comonad
--------
-
-A type class for container types. If implemented for the given container type it allows you to extract the value from the container. It also allows you to nest it deeper: `T[A]` would then become `T[T[A]]`. This combination allows you to convert the container and it contents with a method that only returns the new contents.
-
-Note that it extends `Functor`
-
-    trait Comonad[W[_]] extends Functor[W] {
-      def extract[A](f: W[A]): A
-      def duplicate[A](a: W[A]): W[W[A]]
-      def extend[A, B](a: W[A])(f: W[A] ⇒ B): W[B] = map(duplicate(a), f)
-    }
-
-This means that for every type `T[A]` that has a function `f` with signature `f():A`, a function `g` with signature `g():T[T[a]]` and a function `h` with signature `h(A => B):T[B]` it's easy to define a `Comonad`.
-
-Note that `extend` is defined using the other methods.
-
-*Comonad* seems to be the name for any context for which the value can be extracted. It also allows you to perform transformations with functions that accept a value within a context and return a value without a context.
-
-If we define it for `Some` it would look like this
-
-    object SomeComonad extends Comonad[Some] {
-      def extract[A](f: Some[A]):A = {
-        val Some(value) = f
-        value
-      }
-      def duplicate[A](a: Some[A]):Some[Some[A]] = 
-        Some(a)
-      def extend[A, B](a: Some[A], f: Some[A] => B):Some[B] =
-        map(duplicate(a), f)
-      def map[A, B](a: Some[A], f: A => B): Some[B] =
-        Some(f(extract(a)))
-    }
 
 
